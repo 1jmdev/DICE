@@ -210,7 +210,10 @@ class QuestionDefinition:
         if not self.instructions.strip():
             raise ValueError(f"question {self.name!r} has no instructions")
         if not self.criteria:
-            raise ValueError(f"question {self.name!r} has no criteria")
+            if self.question_type == "noul":
+                self.criteria = [Criterion("true"), Criterion("false")]
+            else:
+                raise ValueError(f"question {self.name!r} has no criteria")
 
     @property
     def labels(self) -> list[str]:

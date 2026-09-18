@@ -10,7 +10,7 @@ import torch.nn.functional as functional
 from torch import nn
 
 from dice.configuration import ScorerConfiguration, TrainingConfiguration
-from dice.constants import MISSING_LABEL_INDEX
+from dice.constants import MASKED_LOGIT, MISSING_LABEL_INDEX
 from dice.dataset import EmbeddingBundle
 from dice.progress import progress
 from dice.scorer import ScorerHead
@@ -61,7 +61,7 @@ def masked_logits(
 ) -> torch.Tensor:
     """Score a batch, assigning negative infinity to padding positions."""
     logits = scorer(query_embeddings.unsqueeze(1), choice_embeddings)
-    return logits.masked_fill(~choice_mask, float("-inf"))
+    return logits.masked_fill(~choice_mask, MASKED_LOGIT)
 
 
 def compute_loss(
@@ -107,8 +107,9 @@ def predict_logits(
     if len(bundle) == 0:
         return torch.empty((0, 0), dtype=torch.float32)
 
+    width = bundle.choice_count
+    scores = torch.full((len(bundle), width), MASKED_LOGIT, dtype=torch.float32)
     batch_count = (len(bundle) + batch_size - 1) // batch_size
-    rows: list[torch.Tensor] = []
     for start in progress(
         range(0, len(bundle), batch_size),
         total=batch_count,
@@ -124,8 +125,8 @@ def predict_logits(
             choice_embeddings,
             choice_mask,
         )
-        rows.append(logits.detach().cpu())
-    return torch.cat(rows, dim=0)
+        scores[start:stop, : logits.shape[1]] = logits.detach().cpu()
+    return scores
 
 
 def evaluate_scorer(

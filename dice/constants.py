@@ -26,4 +26,8 @@ CALIBRATION_FILENAME = "calibration.json"
 
 MISSING_LABEL_INDEX = -100
 
+# Finite stand-in for masked logits: softmax drives it to ~0, and unlike
+# -inf it keeps gradients finite during temperature fitting.
+MASKED_LOGIT = -1.0e4
+
 EMBEDDING_CACHE_FORMAT = 2

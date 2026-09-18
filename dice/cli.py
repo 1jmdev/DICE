@@ -47,6 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_training_parser(subparsers)
     _add_evaluation_parser(subparsers)
     _add_decision_parser(subparsers)
+    _add_server_parser(subparsers)
     return parser
 
 
@@ -198,6 +199,31 @@ def _add_decision_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Emit the decision as a JSON document.",
     )
     parser.set_defaults(handler=_run_decision)
+
+
+def _add_server_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "server",
+        help="Serve the decision engine over HTTP.",
+    )
+    parser.add_argument(
+        "--model",
+        default="models/dice",
+        help="Saved model directory.",
+    )
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.set_defaults(handler=_run_server)
+
+
+def _run_server(arguments: argparse.Namespace) -> int:
+    import uvicorn
+
+    from dice import server as server_module
+
+    server_module.load(arguments.model)
+    uvicorn.run(server_module.app, host=arguments.host, port=arguments.port)
+    return 0
 
 
 def _run_preparation(arguments: argparse.Namespace) -> int:

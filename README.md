@@ -16,6 +16,7 @@ dice prepare --output data/decisions.jsonl
 dice train --output models/dice
 dice evaluate --model models/dice --examples models/dice/test.jsonl
 dice decide --model models/dice --input request.json
+dice server
 ```
 
 The request file holds a `state` and a `questions` object. Each question has a

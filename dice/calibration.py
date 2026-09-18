@@ -54,13 +54,13 @@ class TemperatureScaler(nn.Module):
         self.log_temperature = nn.Parameter(torch.tensor(math.log(initial)))
 
     def forward(self, logits: torch.Tensor) -> torch.Tensor:
-        temperature = self.log_temperature.exp().clamp(min=1.0e-3, max=1.0e3)
+        temperature = self.log_temperature.exp().clamp(min=1.0e-2, max=1.0e2)
         return logits / temperature
 
     @property
     def temperature(self) -> float:
         """The current temperature as a Python float."""
-        return float(self.log_temperature.exp().clamp(min=1.0e-3, max=1.0e3).item())
+        return float(self.log_temperature.exp().clamp(min=1.0e-2, max=1.0e2).item())
 
 
 @dataclass
@@ -112,7 +112,10 @@ def fit_temperature(
         return loss
 
     optimizer.step(closure)
-    return scaler.temperature
+    temperature = scaler.temperature
+    if not math.isfinite(temperature) or temperature <= 0.0:
+        return configuration.initial_temperature
+    return temperature
 
 
 def tune_threshold(
@@ -198,6 +201,10 @@ def fit_calibration(
 
     temperature = fit_temperature(logits, labels, configuration)
     probabilities = calibrated_probabilities(logits, temperature)
+    if not bool(torch.isfinite(probabilities).all()):
+        temperature = configuration.initial_temperature
+        probabilities = calibrated_probabilities(logits, temperature)
+
     search = tune_threshold(
         probabilities,
         labels,

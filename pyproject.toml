@@ -29,10 +29,12 @@ classifiers = [
 ]
 dependencies = [
   "datasets>=2.18",
+  "fastapi>=0.110",
   "numpy>=1.24",
   "torch>=2.1",
   "tqdm>=4.66",
   "transformers>=4.38",
+  "uvicorn>=0.27",
 ]
 
 [project.optional-dependencies]
