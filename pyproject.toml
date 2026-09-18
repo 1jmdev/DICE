@@ -1,0 +1,65 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dice"
+version = "0.1.0"
+description = "A compact frozen-encoder decision engine with calibrated deferral."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = [
+  "decision-engine",
+  "sentence-embeddings",
+  "calibration",
+  "deferral",
+  "multilingual",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "numpy>=1.24",
+  "torch>=2.1",
+  "transformers>=4.38",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.5",
+]
+
+[project.scripts]
+dice = "dice.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dice"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "dice",
+  "README.md",
+  "pyproject.toml",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "I",
+  "UP",
+  "B",
+]

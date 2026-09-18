@@ -1,0 +1,22 @@
+"""Project-wide constants shared across the DICE pipeline."""
+
+from __future__ import annotations
+
+PROJECT_NAME = "dice"
+PROJECT_VERSION = "0.1.0"
+
+DEFAULT_ENCODER_NAME = "intfloat/multilingual-e5-small"
+DEFAULT_QUERY_PREFIX = "query: "
+DEFAULT_PASSAGE_PREFIX = "passage: "
+DEFAULT_MAX_TOKENS = 512
+
+ENCODER_EMBEDDING_DIMENSION = 384
+ENCODER_LAYER_COUNT = 12
+
+DEFERRAL_SENTINEL = "DEFER"
+
+CONFIGURATION_FILENAME = "configuration.json"
+SCORER_FILENAME = "scorer.pt"
+CALIBRATION_FILENAME = "calibration.json"
+
+MISSING_LABEL_INDEX = -100
