@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from dice.calibration import fit_calibration
 from dice.configuration import (
@@ -21,6 +22,12 @@ from dice.embedding_cache import build_bundle, prepare_bundle
 from dice.encoder import FrozenEncoder
 from dice.engine import DecisionEngine
 from dice.evaluation import evaluate_logits
+from dice.preparation import (
+    DEFAULT_DATASET_FILENAME,
+    DEFAULT_DATASETS,
+    available_datasets,
+    prepare_datasets,
+)
 from dice.schema import Decision
 from dice.training import parameter_count, predict_logits, train_scorer
 
@@ -36,10 +43,47 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    _add_preparation_parser(subparsers)
     _add_training_parser(subparsers)
     _add_evaluation_parser(subparsers)
     _add_decision_parser(subparsers)
     return parser
+
+
+def _add_preparation_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "prepare",
+        help="Download public datasets and write a DICE JSONL dataset.",
+    )
+    parser.add_argument(
+        "--output",
+        default=DEFAULT_DATASET_FILENAME,
+        help="Output JSONL path.",
+    )
+    parser.add_argument(
+        "--dataset",
+        action="append",
+        default=None,
+        help="Dataset name; repeat to select several. Defaults to the curated set.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Cap the number of examples drawn from each dataset.",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        default=None,
+        help="Hugging Face download cache directory.",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        dest="list_datasets",
+        help="List the available datasets and exit.",
+    )
+    parser.set_defaults(handler=_run_preparation)
 
 
 def _add_training_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -47,8 +91,33 @@ def _add_training_parser(subparsers: argparse._SubParsersAction) -> None:
         "train",
         help="Train a scorer head, fit calibration, and save the engine.",
     )
-    parser.add_argument("--examples", required=True, help="Path to a JSONL dataset.")
+    parser.add_argument(
+        "--examples",
+        default=None,
+        help="Path to a JSONL dataset; prepared automatically when omitted.",
+    )
     parser.add_argument("--output", required=True, help="Output model directory.")
+    parser.add_argument(
+        "--data-dir",
+        default="data",
+        help="Directory for automatically prepared datasets.",
+    )
+    parser.add_argument(
+        "--refresh-data",
+        action="store_true",
+        help="Re-download the automatically prepared dataset.",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Cap the number of examples from each prepared dataset.",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        default=None,
+        help="Hugging Face download cache directory.",
+    )
     parser.add_argument(
         "--model-name",
         default=DEFAULT_ENCODER_NAME,
@@ -125,6 +194,39 @@ def _add_decision_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.set_defaults(handler=_run_decision)
 
 
+def _run_preparation(arguments: argparse.Namespace) -> int:
+    if arguments.list_datasets:
+        for name, specification in available_datasets().items():
+            print(f"{name:<14}  {specification.path:<26}  {specification.description}")
+        return 0
+
+    names = arguments.dataset or list(DEFAULT_DATASETS)
+    examples = prepare_datasets(
+        names,
+        arguments.output,
+        arguments.limit,
+        arguments.cache_dir,
+    )
+    print(f"Wrote {len(examples)} examples to {arguments.output}")
+    return 0
+
+
+def _resolve_dataset_path(arguments: argparse.Namespace) -> Path:
+    if arguments.examples is not None:
+        return Path(arguments.examples)
+
+    dataset_path = Path(arguments.data_dir) / DEFAULT_DATASET_FILENAME
+    if arguments.refresh_data or not dataset_path.exists():
+        examples = prepare_datasets(
+            DEFAULT_DATASETS,
+            dataset_path,
+            arguments.limit,
+            arguments.cache_dir,
+        )
+        print(f"Prepared {len(examples)} examples at {dataset_path}")
+    return dataset_path
+
+
 def _run_training(arguments: argparse.Namespace) -> int:
     encoder_configuration = EncoderConfiguration(
         model_name=arguments.model_name,
@@ -132,7 +234,7 @@ def _run_training(arguments: argparse.Namespace) -> int:
         batch_size=arguments.encoder_batch_size,
         device=arguments.device,
     )
-    examples = read_examples(arguments.examples)
+    examples = read_examples(_resolve_dataset_path(arguments))
     unlabelled = [example.identifier for example in examples if not example.is_labelled]
     if unlabelled:
         raise ValueError(

@@ -12,6 +12,7 @@ from torch import nn
 from dice.configuration import ScorerConfiguration, TrainingConfiguration
 from dice.constants import MISSING_LABEL_INDEX
 from dice.dataset import EmbeddingBundle
+from dice.progress import progress
 from dice.scorer import ScorerHead
 
 
@@ -106,8 +107,14 @@ def predict_logits(
     if len(bundle) == 0:
         return torch.empty((0, bundle.choice_count), dtype=torch.float32)
 
+    batch_count = (len(bundle) + batch_size - 1) // batch_size
     rows: list[torch.Tensor] = []
-    for start in range(0, len(bundle), batch_size):
+    for start in progress(
+        range(0, len(bundle), batch_size),
+        total=batch_count,
+        description="Scoring",
+        leave=False,
+    ):
         stop = min(start + batch_size, len(bundle))
         batch = bundle.subset(list(range(start, stop)))
         logits = masked_logits(
@@ -136,7 +143,14 @@ def evaluate_scorer(
 
     scorer.eval()
     with torch.no_grad():
-        for batch in _iterate_batches(bundle, batch_size, False, torch.Generator()):
+        batch_count = (len(bundle) + batch_size - 1) // batch_size
+        batches = progress(
+            _iterate_batches(bundle, batch_size, False, torch.Generator()),
+            total=batch_count,
+            description="Validating",
+            leave=False,
+        )
+        for batch in batches:
             logits = masked_logits(
                 scorer,
                 batch.query_embeddings,
@@ -193,18 +207,32 @@ def train_scorer(
         for name, parameter in scorer.state_dict().items()
     }
     patience = 0
+    batch_count = (len(training_bundle) + configuration.batch_size - 1) // (
+        configuration.batch_size
+    )
+    epoch_bar = progress(
+        range(1, configuration.epochs + 1),
+        total=configuration.epochs,
+        description="Training",
+    )
 
-    for epoch in range(1, configuration.epochs + 1):
+    for epoch in epoch_bar:
         scorer.train()
         accumulated_loss = 0.0
         accumulated_count = 0
 
-        for batch in _iterate_batches(
-            training_bundle,
-            configuration.batch_size,
-            True,
-            generator,
-        ):
+        batches = progress(
+            _iterate_batches(
+                training_bundle,
+                configuration.batch_size,
+                True,
+                generator,
+            ),
+            total=batch_count,
+            description=f"Epoch {epoch}",
+            leave=False,
+        )
+        for batch in batches:
             optimizer.zero_grad()
             logits = masked_logits(
                 scorer,
@@ -236,6 +264,11 @@ def train_scorer(
                 validation_loss=validation_loss,
                 validation_accuracy=validation_accuracy,
             )
+        )
+        epoch_bar.set_postfix(
+            loss=f"{training_loss:.4f}",
+            validation=f"{validation_loss:.4f}",
+            accuracy=f"{validation_accuracy:.4f}",
         )
 
         improved = (

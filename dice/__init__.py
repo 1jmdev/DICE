@@ -21,6 +21,14 @@ from dice.dataset import EmbeddingBundle, read_examples, split_indices, write_ex
 from dice.encoder import FrozenEncoder
 from dice.engine import DecisionEngine
 from dice.evaluation import EvaluationReport, evaluate_logits
+from dice.preparation import (
+    DATASET_REGISTRY,
+    DEFAULT_DATASETS,
+    DatasetSpecification,
+    available_datasets,
+    convert_dataset,
+    prepare_datasets,
+)
 from dice.schema import Decision, DecisionExample, compose_query
 from dice.scorer import ScorerHead
 from dice.training import TrainingReport, predict_logits, train_scorer
@@ -32,10 +40,13 @@ __all__ = [
     "__version__",
     "CalibrationConfiguration",
     "CalibrationParameters",
+    "DATASET_REGISTRY",
+    "DEFAULT_DATASETS",
     "Decision",
     "DecisionConfiguration",
     "DecisionEngine",
     "DecisionExample",
+    "DatasetSpecification",
     "EmbeddingBundle",
     "EncoderConfiguration",
     "EvaluationReport",
@@ -45,11 +56,14 @@ __all__ = [
     "ThresholdSearchResult",
     "TrainingConfiguration",
     "TrainingReport",
+    "available_datasets",
     "compose_query",
+    "convert_dataset",
     "evaluate_logits",
     "fit_calibration",
     "fit_temperature",
     "predict_logits",
+    "prepare_datasets",
     "read_examples",
     "split_indices",
     "train_scorer",

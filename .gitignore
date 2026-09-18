@@ -30,3 +30,5 @@ models/
 .idea/
 .vscode/
 .DS_Store
+
+data/

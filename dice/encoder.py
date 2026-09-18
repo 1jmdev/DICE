@@ -14,6 +14,7 @@ import torch.nn.functional as functional
 from transformers import AutoModel, AutoTokenizer
 
 from dice.configuration import EncoderConfiguration
+from dice.progress import progress
 
 
 class FrozenEncoder:
@@ -55,6 +56,7 @@ class FrozenEncoder:
         texts: Sequence[str],
         prefix: str,
         batch_size: int | None = None,
+        description: str | None = None,
     ) -> torch.Tensor:
         """Encode texts with a prefix, returning L2-normalised embeddings."""
         if not texts:
@@ -65,8 +67,16 @@ class FrozenEncoder:
             )
 
         size = batch_size or self.configuration.batch_size
+        window_count = (len(texts) + size - 1) // size
+        windows = progress(
+            range(0, len(texts), size),
+            total=window_count,
+            description=description or "Encoding",
+            leave=False,
+        )
+
         fragments: list[torch.Tensor] = []
-        for start in range(0, len(texts), size):
+        for start in windows:
             window = texts[start : start + size]
             fragments.append(self._encode_window(window, prefix))
         return torch.cat(fragments, dim=0)
@@ -77,7 +87,12 @@ class FrozenEncoder:
         batch_size: int | None = None,
     ) -> torch.Tensor:
         """Encode state-plus-question inputs with the query prefix."""
-        return self.encode(texts, self.configuration.query_prefix, batch_size)
+        return self.encode(
+            texts,
+            self.configuration.query_prefix,
+            batch_size,
+            "Encoding queries",
+        )
 
     def encode_choices(
         self,
@@ -85,7 +100,12 @@ class FrozenEncoder:
         batch_size: int | None = None,
     ) -> torch.Tensor:
         """Encode candidate choices with the passage prefix."""
-        return self.encode(texts, self.configuration.passage_prefix, batch_size)
+        return self.encode(
+            texts,
+            self.configuration.passage_prefix,
+            batch_size,
+            "Encoding choices",
+        )
 
     def _encode_window(self, texts: Sequence[str], prefix: str) -> torch.Tensor:
         prefixed = [prefix + text for text in texts]
