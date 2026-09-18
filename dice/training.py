@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import os
+import random
 from collections.abc import Sequence
 from pathlib import Path
 
 from sentence_transformers import CrossEncoder, InputExample
 from torch.utils.data import DataLoader
 
-from dice.config import DEFAULT_DEVICE, RERANKER_MODEL
+from dice.config import DEFAULT_DEVICE, MAX_NEGATIVES, RERANKER_MODEL
+
+_SAMPLER = random.Random(17)
 
 
 def read_records(path: str | Path) -> list[dict]:
@@ -24,20 +28,24 @@ def read_records(path: str | Path) -> list[dict]:
     return records
 
 
-def build_examples(records: Sequence[dict]) -> list[InputExample]:
-    """Turn each decision into one positive and several negative pairs."""
+def build_examples(
+    records: Sequence[dict],
+    max_negatives: int = MAX_NEGATIVES,
+) -> list[InputExample]:
+    """Build one positive pair and a bounded sample of negative pairs per record."""
     examples: list[InputExample] = []
     for record in records:
         choices = [str(choice) for choice in record["choices"]]
         correct = int(record["correct_index"])
         query = f"{record.get('state', '')}\n\n{record.get('question', '')}".strip()
-        for index, choice in enumerate(choices):
-            examples.append(
-                InputExample(
-                    texts=[query, choice],
-                    label=1.0 if index == correct else 0.0,
-                )
-            )
+
+        negatives = [index for index in range(len(choices)) if index != correct]
+        if max_negatives is not None and len(negatives) > max_negatives:
+            negatives = _SAMPLER.sample(negatives, max_negatives)
+
+        examples.append(InputExample(texts=[query, choices[correct]], label=1.0))
+        for index in negatives:
+            examples.append(InputExample(texts=[query, choices[index]], label=0.0))
     return examples
 
 
@@ -45,11 +53,14 @@ def train(
     examples_path: str | Path,
     output: str | Path,
     model: str = RERANKER_MODEL,
-    epochs: int = 3,
-    batch_size: int = 16,
+    epochs: int = 2,
+    batch_size: int = 32,
     learning_rate: float = 2.0e-5,
 ) -> str:
     """Fine-tune the reranker and save it to ``output``."""
+    # Keep experiment-tracking output out of the project directory.
+    os.environ.setdefault("WANDB_DIR", str(Path.home() / ".cache" / "wandb"))
+
     examples = build_examples(read_records(examples_path))
     if not examples:
         raise ValueError("no training pairs were produced")

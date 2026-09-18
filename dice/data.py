@@ -65,6 +65,7 @@ SOURCES: tuple[Source, ...] = (
             "How positive is the tweet?",
             "What is the sentiment level of the tweet?",
         ),
+        limit=20000,
     ),
     Source(
         name="ag-news",
@@ -74,7 +75,7 @@ SOURCES: tuple[Source, ...] = (
             "Which news category best describes the article?",
             "What topic does this article cover?",
         ),
-        limit=40000,
+        limit=24000,
     ),
     Source(
         name="banking77",
@@ -85,6 +86,7 @@ SOURCES: tuple[Source, ...] = (
             "What is the customer asking about?",
         ),
         choice_column="label_text",
+        limit=6000,
     ),
     Source(
         name="20-newsgroups",
@@ -95,7 +97,7 @@ SOURCES: tuple[Source, ...] = (
             "What topic is this post about?",
         ),
         choice_column="label_text",
-        limit=8000,
+        limit=6000,
     ),
 )
 

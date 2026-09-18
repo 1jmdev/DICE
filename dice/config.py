@@ -21,3 +21,7 @@ SCORER_WEIGHTS = {
     "reranker": 0.35,
     "similarity": 0.15,
 }
+
+# At most this many negative criteria are sampled per training record, so
+# wide label spaces (like banking77) do not explode the step count.
+MAX_NEGATIVES = 8

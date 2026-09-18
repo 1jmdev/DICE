@@ -32,8 +32,8 @@ def build_parser() -> argparse.ArgumentParser:
     train = commands.add_parser("train", help="Download data and fine-tune the reranker.")
     train.add_argument("--examples", default=None, help="Training JSONL (downloaded when omitted).")
     train.add_argument("--output", required=True)
-    train.add_argument("--epochs", type=int, default=3)
-    train.add_argument("--batch-size", type=int, default=16)
+    train.add_argument("--epochs", type=int, default=2)
+    train.add_argument("--batch-size", type=int, default=32)
     train.add_argument("--learning-rate", type=float, default=2.0e-5)
     train.set_defaults(handler=_train)
 
