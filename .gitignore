@@ -1,8 +1,8 @@
-# Byte-compiled files
+# Python bytecode
 __pycache__/
 *.py[cod]
 
-# Distribution and build artefacts
+# Packaging
 build/
 dist/
 *.egg-info/
@@ -12,15 +12,22 @@ dist/
 venv/
 
 # Tooling caches
-.pytest_cache/
 .ruff_cache/
+.pytest_cache/
 .mypy_cache/
 
-# Model and data artefacts
-models/
+# Training artefacts
+checkpoints/
+*.ckpt
+
+# Downloaded datasets and fine-tuned models
 data/
-*.pt
+models/
+
+# Model weight files
 *.safetensors
+*.bin
+*.pt
 
 # Editor and operating-system files
 .idea/
