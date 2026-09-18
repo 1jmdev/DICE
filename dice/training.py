@@ -53,8 +53,8 @@ def train(
     examples_path: str | Path,
     output: str | Path,
     model: str = RERANKER_MODEL,
-    epochs: int = 2,
-    batch_size: int = 32,
+    epochs: int = 1,
+    batch_size: int = 64,
     learning_rate: float = 2.0e-5,
 ) -> str:
     """Fine-tune the reranker and save it to ``output``."""
@@ -66,12 +66,21 @@ def train(
         raise ValueError("no training pairs were produced")
 
     encoder = CrossEncoder(model, device=DEFAULT_DEVICE)
-    loader = DataLoader(examples, shuffle=True, batch_size=batch_size)
+    on_cuda = DEFAULT_DEVICE == "cuda"
+    loader = DataLoader(
+        examples,
+        shuffle=True,
+        batch_size=batch_size,
+        num_workers=min(8, os.cpu_count() or 1),
+        collate_fn=encoder.smart_batching_collate,
+        pin_memory=on_cuda,
+    )
     encoder.fit(
         train_dataloader=loader,
         epochs=epochs,
         warmup_steps=max(1, int(0.1 * len(loader) * epochs)),
         optimizer_params={"lr": learning_rate},
         output_path=str(output),
+        use_amp=on_cuda,
     )
     return str(output)
