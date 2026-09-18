@@ -4,22 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dice"
-version = "0.1.0"
-description = "A compact frozen-encoder decision engine with calibrated deferral."
+version = "0.2.0"
+description = "A cross-encoder decision engine that answers typed questions about a state."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-keywords = [
-  "decision-engine",
-  "sentence-embeddings",
-  "calibration",
-  "deferral",
-  "multilingual",
-]
+keywords = ["decision-engine", "cross-encoder", "zero-shot", "fastapi"]
 classifiers = [
   "Development Status :: 3 - Alpha",
-  "Intended Audience :: Developers",
-  "Intended Audience :: Science/Research",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
@@ -28,19 +20,15 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-  "datasets>=2.18",
   "fastapi>=0.110",
   "numpy>=1.24",
+  "sentence-transformers>=3.0",
   "torch>=2.1",
-  "tqdm>=4.66",
-  "transformers>=4.38",
   "uvicorn>=0.27",
 ]
 
 [project.optional-dependencies]
-dev = [
-  "ruff>=0.5",
-]
+dev = ["ruff>=0.5"]
 
 [project.scripts]
 dice = "dice.cli:main"
@@ -48,22 +36,9 @@ dice = "dice.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["dice"]
 
-[tool.hatch.build.targets.sdist]
-include = [
-  "dice",
-  "README.md",
-  "pyproject.toml",
-]
-
 [tool.ruff]
 line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-select = [
-  "E",
-  "F",
-  "I",
-  "UP",
-  "B",
-]
+select = ["E", "F", "I", "UP", "B"]

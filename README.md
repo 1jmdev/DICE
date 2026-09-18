@@ -1,7 +1,10 @@
 # DICE
 
-A compact decision engine that answers typed questions about a state and
-returns calibrated answers, or defers when unsure.
+Answers typed questions about a state with a cross-encoder, returning
+calibrated per-criterion probabilities.
+
+A request holds a `state` and a `questions` object. Each question has a `type`
+(`noul`, `choice`, or `score`), `instructions`, and `criteria`.
 
 ## Install
 
@@ -12,15 +15,13 @@ pip install -e .
 ## Commands
 
 ```bash
-dice prepare --output data/decisions.jsonl
-dice train --output models/dice
-dice evaluate --model models/dice --examples models/dice/test.jsonl
-dice decide --model models/dice --input request.json
-dice server
+dice serve
+dice ask request.json
+dice train --examples data.jsonl --output models/dice --epochs 3
 ```
 
-The request file holds a `state` and a `questions` object. Each question has a
-`type` (`noul`, `choice`, or `score`), `instructions`, and `criteria`.
+`dice serve` exposes `POST /v1/systemone` on `127.0.0.1:8000`, with the request
+body sent as-is.
 
 ## License
 

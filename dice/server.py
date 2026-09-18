@@ -2,43 +2,38 @@
 
 from __future__ import annotations
 
-import os
-
 from fastapi import Body, FastAPI
+from fastapi.responses import JSONResponse
 
-from dice.engine import DecisionEngine
-from dice.schema import StateDecisionRequest
-
-MODEL_DIRECTORY_ENVIRONMENT_VARIABLE = "DICE_MODEL"
-DEFAULT_MODEL_DIRECTORY = "models/dice"
+from dice.config import DEFAULT_MODEL
+from dice.engine import Engine
+from dice.schema import Request
 
 app = FastAPI(title="DICE")
 
-_engine: DecisionEngine | None = None
+_engine: Engine | None = None
+_model_name = DEFAULT_MODEL
 
 
-def load(directory: str, model_name: str | None = None) -> None:
-    """Load the engine from a saved model directory."""
-    global _engine
-    _engine = DecisionEngine.from_pretrained(directory)
-    if model_name is not None:
-        _engine.model_name = model_name
+def load(model: str = DEFAULT_MODEL) -> None:
+    """Load the engine from a model name or a fine-tuned directory."""
+    global _engine, _model_name
+    _engine = Engine(model)
+    _model_name = model
 
 
-def engine() -> DecisionEngine:
-    """Return the loaded engine, loading the default directory on first use."""
+def engine() -> Engine:
     global _engine
     if _engine is None:
-        load(os.environ.get(MODEL_DIRECTORY_ENVIRONMENT_VARIABLE, DEFAULT_MODEL_DIRECTORY))
+        load(_model_name)
     return _engine
+
+
+@app.exception_handler(ValueError)
+async def invalid_request(_, error: ValueError) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"detail": str(error)})
 
 
 @app.post("/v1/systemone")
 async def systemone(payload: dict = Body(...)) -> dict:
-    request = StateDecisionRequest.from_record(payload)
-    response = engine().decide_state(
-        state=request.state,
-        questions=request.questions,
-        identifier=request.identifier,
-    )
-    return response.to_record()
+    return engine().decide(Request.from_record(payload)).to_record()
