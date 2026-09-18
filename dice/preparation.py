@@ -32,7 +32,7 @@ class DatasetSpecification:
 
     name: str
     path: str
-    question: str
+    questions: tuple[str, ...]
     text_columns: tuple[str, ...]
     label_column: str = "label"
     config: str | None = None
@@ -59,14 +59,22 @@ DATASET_REGISTRY: dict[str, DatasetSpecification] = {
     "ag-news": DatasetSpecification(
         name="ag-news",
         path="fancyzhx/ag_news",
-        question="Which news category best describes the article?",
+        questions=(
+            "Which news category best describes the article?",
+            "What topic does this article cover?",
+            "Classify the article into one of these categories.",
+        ),
         text_columns=("text",),
         description="AG News topic classification across four balanced categories.",
     ),
     "sst2": DatasetSpecification(
         name="sst2",
         path="SetFit/sst2",
-        question="What is the sentiment of the sentence?",
+        questions=(
+            "What is the sentiment of the sentence?",
+            "Is the sentence positive or negative?",
+            "Classify the sentiment expressed by the sentence.",
+        ),
         text_columns=("text",),
         choice_column="label_text",
         description="Stanford Sentiment Treebank sentences labelled negative or positive.",
@@ -75,14 +83,22 @@ DATASET_REGISTRY: dict[str, DatasetSpecification] = {
         name="emotion",
         path="dair-ai/emotion",
         config="split",
-        question="Which emotion does the message express?",
+        questions=(
+            "Which emotion does the message express?",
+            "What emotion is the author feeling?",
+            "Identify the emotion conveyed by the message.",
+        ),
         text_columns=("text",),
         description="English messages labelled with six basic emotions.",
     ),
     "20-newsgroups": DatasetSpecification(
         name="20-newsgroups",
         path="SetFit/20_newsgroups",
-        question="Which newsgroup topic does the post belong to?",
+        questions=(
+            "Which newsgroup topic does the post belong to?",
+            "What topic is this post about?",
+            "Classify the post into one of these topics.",
+        ),
         text_columns=("text",),
         choice_column="label_text",
         description="Usenet posts distributed across twenty topics.",
@@ -90,7 +106,11 @@ DATASET_REGISTRY: dict[str, DatasetSpecification] = {
     "banking77": DatasetSpecification(
         name="banking77",
         path="PolyAI/banking77",
-        question="Which banking intent does the customer request express?",
+        questions=(
+            "Which banking intent does the customer request express?",
+            "What is the customer asking about?",
+            "Identify the intent behind the customer's request.",
+        ),
         text_columns=("text",),
         description="Fine-grained customer-service intent classification, 77 intents.",
     ),
@@ -186,11 +206,12 @@ def convert_dataset(
         state = specification.render_state(record)
         if not state:
             continue
+        question = specification.questions[index % len(specification.questions)]
         examples.append(
             DecisionExample(
                 identifier=f"{specification.name}-{index:07d}",
                 state=state,
-                question=specification.question,
+                question=question,
                 choices=choices,
                 correct_index=int(record[specification.label_column]),
             )

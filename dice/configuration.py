@@ -45,7 +45,7 @@ class ScorerConfiguration:
     """Settings for the trainable scorer head."""
 
     embedding_dimension: int = ENCODER_EMBEDDING_DIMENSION
-    hidden_dimension: int = 256
+    hidden_dimension: int = 512
     dropout: float = 0.1
 
     @property
@@ -61,11 +61,11 @@ class TrainingConfiguration:
     learning_rate: float = 1.0e-3
     weight_decay: float = 0.01
     batch_size: int = 256
-    epochs: int = 30
+    epochs: int = 100
     validation_fraction: float = 0.15
     random_seed: int = 17
     device: str = "cuda"
-    early_stopping_patience: int | None = 5
+    early_stopping_patience: int | None = 10
     minimum_improvement: float = 1.0e-4
 
 

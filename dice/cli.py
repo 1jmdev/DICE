@@ -133,16 +133,16 @@ def _add_training_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Ignore any existing embedding cache.",
     )
-    parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--learning-rate", type=float, default=1.0e-3)
     parser.add_argument("--weight-decay", type=float, default=0.01)
     parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--hidden-dimension", type=int, default=256)
+    parser.add_argument("--hidden-dimension", type=int, default=512)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--validation-fraction", type=float, default=0.15)
     parser.add_argument("--test-fraction", type=float, default=0.1)
     parser.add_argument("--random-seed", type=int, default=17)
-    parser.add_argument("--early-stopping-patience", type=int, default=5)
+    parser.add_argument("--early-stopping-patience", type=int, default=10)
     parser.add_argument("--target-precision", type=float, default=0.95)
     parser.add_argument("--minimum-coverage", type=float, default=0.0)
     parser.add_argument(

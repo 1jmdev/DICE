@@ -205,6 +205,10 @@ def train_scorer(
         lr=configuration.learning_rate,
         weight_decay=configuration.weight_decay,
     )
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=configuration.epochs,
+    )
     generator = torch.Generator(device="cpu").manual_seed(configuration.random_seed)
 
     report = TrainingReport()
@@ -250,7 +254,11 @@ def train_scorer(
             soft_targets = batch.soft_targets
             if soft_targets is not None:
                 soft_targets = soft_targets[:, : choice_embeddings.shape[1]]
-            loss = compute_loss(logits, batch.labels, soft_targets)
+            loss = compute_loss(
+                logits,
+                batch.labels,
+                soft_targets,
+            )
             loss.backward()
             optimizer.step()
 
@@ -280,6 +288,7 @@ def train_scorer(
             validation=f"{validation_loss:.4f}",
             accuracy=f"{validation_accuracy:.4f}",
         )
+        scheduler.step()
 
         improved = (
             validation_loss

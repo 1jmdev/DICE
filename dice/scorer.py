@@ -17,14 +17,18 @@ class ScorerHead(nn.Module):
     def __init__(self, configuration: ScorerConfiguration | None = None) -> None:
         super().__init__()
         self.configuration = configuration or ScorerConfiguration()
+        bottleneck = max(1, self.configuration.hidden_dimension // 2)
         self.network = nn.Sequential(
             nn.Linear(
                 self.configuration.input_dimension,
                 self.configuration.hidden_dimension,
             ),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Dropout(self.configuration.dropout),
-            nn.Linear(self.configuration.hidden_dimension, 1),
+            nn.Linear(self.configuration.hidden_dimension, bottleneck),
+            nn.GELU(),
+            nn.Dropout(self.configuration.dropout),
+            nn.Linear(bottleneck, 1),
         )
 
     def forward(
