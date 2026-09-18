@@ -1,0 +1,29 @@
+{
+    "state": "Help! My payouts have been failing for 3 days and support has not replied.",
+    "questions": {
+        "is_urgent": {
+            "type": "noul",
+            "instructions": "Does this convey urgency?"
+        },
+        "department": {
+            "type": "choice",
+            "instructions": "Which team should handle this?",
+            "criteria": {
+                "billing": "Payments, invoicing, refunds",
+                "technical": "Bugs, outages, integrations",
+                "sales": "Pricing, upgrades, new accounts"
+            }
+        },
+        "severity": {
+            "type": "score",
+            "instructions": "How severe is this request?",
+            "criteria": [
+                "Minimal",
+                "Low",
+                "Moderate",
+                "High",
+                "Critical"
+            ]
+        }
+    }
+}
