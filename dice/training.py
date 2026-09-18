@@ -1,4 +1,4 @@
-"""Optional fine-tuning of the cross-encoder on labelled decisions."""
+"""Fine-tuning of the reranker on labelled decisions."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 from sentence_transformers import CrossEncoder, InputExample
 from torch.utils.data import DataLoader
 
-from dice.config import DEFAULT_DEVICE, DEFAULT_MODEL
+from dice.config import DEFAULT_DEVICE, RERANKER_MODEL
 
 
 def read_records(path: str | Path) -> list[dict]:
@@ -44,12 +44,12 @@ def build_examples(records: Sequence[dict]) -> list[InputExample]:
 def train(
     examples_path: str | Path,
     output: str | Path,
-    model: str = DEFAULT_MODEL,
+    model: str = RERANKER_MODEL,
     epochs: int = 3,
     batch_size: int = 16,
     learning_rate: float = 2.0e-5,
 ) -> str:
-    """Fine-tune the cross-encoder and save it to ``output``."""
+    """Fine-tune the reranker and save it to ``output``."""
     examples = build_examples(read_records(examples_path))
     if not examples:
         raise ValueError("no training pairs were produced")

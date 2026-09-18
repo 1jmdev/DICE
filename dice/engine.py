@@ -1,24 +1,21 @@
-"""Cross-encoder decision engine.
-
-Each criterion is scored jointly with the state and the question instructions,
-so the model follows the instruction rather than a fixed label set.
-"""
+"""Decision engine that fuses several non-LLM encoder scorers."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 import numpy as np
-import torch
-from sentence_transformers import CrossEncoder
 
 from dice.config import (
     DEFAULT_DEVICE,
-    DEFAULT_MODEL,
-    PREDICTION_BATCH_SIZE,
+    NLI_MODEL,
+    RERANKER_MODEL,
+    SCORER_WEIGHTS,
+    SIMILARITY_MODEL,
     SOFTMAX_TEMPERATURE,
 )
 from dice.schema import Answer, Request
+from dice.scorers import NliScorer, RerankerScorer, ScoringItem, SimilarityScorer
 
 
 def _softmax(scores: np.ndarray) -> np.ndarray:
@@ -30,12 +27,12 @@ def _softmax(scores: np.ndarray) -> np.ndarray:
 
 @dataclass
 class Usage:
-    """Token counts"""
+    """Token counts for one request."""
 
     input_tokens: int
     output_tokens: int
 
-    def to_record(self) -> dict[str, float | int]:
+    def to_record(self) -> dict[str, int]:
         return {
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
@@ -46,13 +43,11 @@ class Usage:
 class Result:
     """The complete response for one request."""
 
-    model: str
     answers: dict[str, Answer]
     usage: Usage
 
     def to_record(self) -> dict:
         return {
-            "model": self.model,
             "answers": {
                 name: answer.to_record()
                 for name, answer in self.answers.items()
@@ -62,64 +57,82 @@ class Result:
 
 
 class Engine:
-    """Scores every criterion against the state and instructions."""
+    """Scores every criterion with each scorer, then fuses per question."""
 
-    def __init__(self, model: str = DEFAULT_MODEL, device: str = DEFAULT_DEVICE) -> None:
-        try:
-            self.model = CrossEncoder(
-                model,
-                device=device,
-                activation_fn=torch.nn.Identity(),
-            )
-        except TypeError:
-            self.model = CrossEncoder(model, device=device)
-        self.model_name = model
+    def __init__(
+        self,
+        reranker_model: str = RERANKER_MODEL,
+        device: str = DEFAULT_DEVICE,
+        weights: dict[str, float] | None = None,
+    ) -> None:
+        selected = dict(weights or SCORER_WEIGHTS)
+        factories = {
+            "nli": lambda: NliScorer(NLI_MODEL, device),
+            "reranker": lambda: RerankerScorer(reranker_model, device),
+            "similarity": lambda: SimilarityScorer(SIMILARITY_MODEL, device),
+        }
+
+        self._scorers: list[tuple[float, object]] = []
+        for name, factory in factories.items():
+            weight = float(selected.get(name, 0.0))
+            if weight > 0.0:
+                self._scorers.append((weight, factory()))
+        if not self._scorers:
+            raise ValueError("at least one scorer must have a positive weight")
+
+        total = sum(weight for weight, _ in self._scorers)
+        self._scorers = [
+            (weight / total, scorer)
+            for weight, scorer in self._scorers
+        ]
 
     def decide(self, request: Request) -> Result:
-        """Answer every question in one batched cross-encoder pass."""
         questions = list(request.questions.values())
 
-        pairs: list[list[str]] = []
+        items: list[ScoringItem] = []
         spans: dict[str, tuple[int, int]] = {}
         for question in questions:
             query = f"{request.state}\n\n{question.instructions}".strip()
-            start = len(pairs)
+            start = len(items)
             for criterion in question.criteria:
-                pairs.append([query, criterion.text])
-            spans[question.name] = (start, len(pairs))
+                items.append(
+                    ScoringItem(
+                        query=query,
+                        type=question.type,
+                        label=criterion.label,
+                        description=criterion.description,
+                    )
+                )
+            spans[question.name] = (start, len(items))
 
-        scores = np.asarray(
-            self.model.predict(
-                pairs,
-                batch_size=PREDICTION_BATCH_SIZE,
-                show_progress_bar=False,
-            )
-        ).reshape(-1)
+        combined = {
+            name: np.zeros(stop - start)
+            for name, (start, stop) in spans.items()
+        }
+        for weight, scorer in self._scorers:
+            scores = scorer.score(items)
+            for name, (start, stop) in spans.items():
+                combined[name] += weight * _softmax(scores[start:stop])
 
-        answers: dict[str, Answer] = {}
-        for question in questions:
-            start, stop = spans[question.name]
-            answers[question.name] = Answer(
+        answers = {
+            question.name: Answer(
                 type=question.type,
                 criteria=question.criteria,
-                probabilities=_softmax(scores[start:stop]).tolist(),
+                probabilities=combined[question.name].tolist(),
             )
-
-        return Result(
-            model=self.model_name,
-            answers=answers,
-            usage=self._usage(pairs, answers),
-        )
+            for question in questions
+        }
+        return Result(answers=answers, usage=self._usage(items, answers))
 
     def _usage(
         self,
-        pairs: list[list[str]],
+        items: list[ScoringItem],
         answers: dict[str, Answer],
     ) -> Usage:
-        tokenizer = self.model.tokenizer
+        tokenizer = self._scorers[0][1].tokenizer  # type: ignore[attr-defined]
         input_tokens = sum(
-            len(tokenizer(query, passage)["input_ids"])
-            for query, passage in pairs
+            len(tokenizer(item.query, item.text)["input_ids"])
+            for item in items
         )
         output_tokens = sum(
             len(tokenizer(answer.criteria[answer.index].text)["input_ids"])

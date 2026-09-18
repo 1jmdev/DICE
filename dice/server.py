@@ -5,27 +5,27 @@ from __future__ import annotations
 from fastapi import Body, FastAPI
 from fastapi.responses import JSONResponse
 
-from dice.config import DEFAULT_MODEL
+from dice.config import RERANKER_MODEL
 from dice.engine import Engine
 from dice.schema import Request
 
 app = FastAPI(title="DICE")
 
 _engine: Engine | None = None
-_model_name = DEFAULT_MODEL
+_reranker_model = RERANKER_MODEL
 
 
-def load(model: str = DEFAULT_MODEL) -> None:
-    """Load the engine from a model name or a fine-tuned directory."""
-    global _engine, _model_name
-    _engine = Engine(model)
-    _model_name = model
+def load(reranker_model: str | None = None) -> None:
+    """Load the engine, optionally replacing the reranker with a fine-tuned one."""
+    global _engine, _reranker_model
+    _reranker_model = reranker_model or RERANKER_MODEL
+    _engine = Engine(reranker_model=_reranker_model)
 
 
 def engine() -> Engine:
     global _engine
     if _engine is None:
-        load(_model_name)
+        load(_reranker_model)
     return _engine
 
 
