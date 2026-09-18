@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from dice.constants import DEFERRAL_SENTINEL
+from dice.constants import DEFERRAL_SENTINEL, QUESTION_TYPES
 
 
 def compose_query(state: str, question: str) -> str:
@@ -131,4 +132,216 @@ class Decision:
             "choices": list(self.choices),
             "probabilities": list(self.probabilities),
             "logits": list(self.logits),
+        }
+
+
+@dataclass
+class Criterion:
+    """One candidate answer for a typed question."""
+
+    label: str
+    description: str | None = None
+
+    @property
+    def text(self) -> str:
+        """The text handed to the encoder for this criterion."""
+        if self.description:
+            return f"{self.label}: {self.description}"
+        return self.label
+
+    def to_record(self) -> str | dict[str, str]:
+        """Render the criterion as a JSON-serialisable value."""
+        if self.description is None:
+            return self.label
+        return {"label": self.label, "description": self.description}
+
+
+def _parse_criteria(raw: Any) -> list[Criterion]:
+    if raw is None:
+        return []
+    if isinstance(raw, Mapping):
+        return [
+            Criterion(
+                label=str(label),
+                description=None if description is None else str(description),
+            )
+            for label, description in raw.items()
+        ]
+    if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+        criteria: list[Criterion] = []
+        for item in raw:
+            if isinstance(item, Mapping):
+                criteria.append(
+                    Criterion(
+                        label=str(item.get("label", "")),
+                        description=(
+                            None
+                            if item.get("description") is None
+                            else str(item["description"])
+                        ),
+                    )
+                )
+            else:
+                criteria.append(Criterion(label=str(item)))
+        return criteria
+    raise ValueError("criteria must be an object or a list")
+
+
+@dataclass
+class QuestionDefinition:
+    """A typed question asked about a state.
+
+    ``noul`` and ``choice`` questions select one criterion; ``score`` questions
+    select one ordered level. All three reduce to scoring the criteria.
+    """
+
+    name: str
+    question_type: str
+    instructions: str
+    criteria: list[Criterion]
+
+    def __post_init__(self) -> None:
+        if self.question_type not in QUESTION_TYPES:
+            allowed = ", ".join(QUESTION_TYPES)
+            raise ValueError(
+                f"question {self.name!r} has type {self.question_type!r}; "
+                f"expected one of {allowed}"
+            )
+        if not self.instructions.strip():
+            raise ValueError(f"question {self.name!r} has no instructions")
+        if not self.criteria:
+            raise ValueError(f"question {self.name!r} has no criteria")
+
+    @property
+    def labels(self) -> list[str]:
+        """The criterion labels in declaration order."""
+        return [criterion.label for criterion in self.criteria]
+
+    @property
+    def ordinal(self) -> bool:
+        """Whether the criteria form an ordered scale."""
+        return self.question_type == "score"
+
+    def to_record(self) -> dict[str, Any]:
+        """Render the question as a JSON-serialisable mapping."""
+        return {
+            "type": self.question_type,
+            "instructions": self.instructions,
+            "criteria": [criterion.to_record() for criterion in self.criteria],
+        }
+
+    @classmethod
+    def from_record(
+        cls,
+        name: str,
+        record: Mapping[str, Any],
+    ) -> QuestionDefinition:
+        """Build a question from a JSON-like mapping."""
+        question_type = str(record.get("type", "")).strip().lower()
+        instructions = str(record.get("instructions", ""))
+        criteria = _parse_criteria(record.get("criteria"))
+        return cls(
+            name=name,
+            question_type=question_type,
+            instructions=instructions,
+            criteria=criteria,
+        )
+
+
+@dataclass
+class StateDecisionRequest:
+    """A state together with every question to answer about it."""
+
+    state: str
+    questions: dict[str, QuestionDefinition]
+    identifier: str | None = None
+
+    def to_record(self) -> dict[str, Any]:
+        """Render the request as a JSON-serialisable mapping."""
+        return {
+            "identifier": self.identifier,
+            "state": self.state,
+            "questions": {
+                name: question.to_record()
+                for name, question in self.questions.items()
+            },
+        }
+
+    @classmethod
+    def from_record(cls, record: Mapping[str, Any]) -> StateDecisionRequest:
+        """Build a request from a JSON-like mapping."""
+        raw_questions = record.get("questions")
+        if not isinstance(raw_questions, Mapping) or not raw_questions:
+            raise ValueError("request is missing the 'questions' object")
+
+        questions: dict[str, QuestionDefinition] = {}
+        for name, specification in raw_questions.items():
+            if not isinstance(specification, Mapping):
+                raise ValueError(f"question {name!r} must be an object")
+            questions[str(name)] = QuestionDefinition.from_record(
+                str(name),
+                specification,
+            )
+
+        identifier = record.get("identifier")
+        return cls(
+            state=str(record.get("state", "")),
+            questions=questions,
+            identifier=None if identifier is None else str(identifier),
+        )
+
+
+@dataclass
+class QuestionAnswer:
+    """The calibrated answer to one typed question."""
+
+    name: str
+    question_type: str
+    deferred: bool
+    label: str | None
+    index: int | None
+    probability: float
+    criteria: list[str]
+    probabilities: list[float]
+    logits: list[float]
+
+    @property
+    def answer(self) -> str:
+        """The chosen criterion label, or the deferral sentinel."""
+        if self.deferred or self.label is None:
+            return DEFERRAL_SENTINEL
+        return self.label
+
+    def to_record(self) -> dict[str, Any]:
+        """Render the answer as a JSON-serialisable mapping."""
+        return {
+            "type": self.question_type,
+            "deferred": self.deferred,
+            "answer": self.answer,
+            "label": self.label,
+            "index": self.index,
+            "probability": self.probability,
+            "criteria": list(self.criteria),
+            "probabilities": list(self.probabilities),
+            "logits": list(self.logits),
+        }
+
+
+@dataclass
+class StateDecision:
+    """Every answer produced for one state."""
+
+    identifier: str | None
+    state: str
+    answers: dict[str, QuestionAnswer]
+
+    def to_record(self) -> dict[str, Any]:
+        """Render the decision as a JSON-serialisable mapping."""
+        return {
+            "identifier": self.identifier,
+            "state": self.state,
+            "answers": {
+                name: answer.to_record()
+                for name, answer in self.answers.items()
+            },
         }

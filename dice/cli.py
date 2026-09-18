@@ -28,7 +28,7 @@ from dice.preparation import (
     available_datasets,
     prepare_datasets,
 )
-from dice.schema import Decision
+from dice.schema import Decision, StateDecision, StateDecisionRequest
 from dice.training import parameter_count, predict_logits, train_scorer
 
 
@@ -177,12 +177,17 @@ def _add_decision_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument("--model", required=True, help="Saved model directory.")
     parser.add_argument("--state", default="", help="Unstructured context.")
-    parser.add_argument("--question", required=True, help="Typed question.")
+    parser.add_argument("--question", default=None, help="Typed question.")
     parser.add_argument(
         "--choice",
         action="append",
-        required=True,
+        default=None,
         help="Candidate choice; repeat for each choice.",
+    )
+    parser.add_argument(
+        "--input",
+        default=None,
+        help="JSON request with a state and typed questions ('-' reads stdin).",
     )
     parser.add_argument("--identifier", default=None)
     parser.add_argument("--device", default=None)
@@ -333,6 +338,26 @@ def _run_evaluation(arguments: argparse.Namespace) -> int:
 
 def _run_decision(arguments: argparse.Namespace) -> int:
     engine = DecisionEngine.from_pretrained(arguments.model, device=arguments.device)
+
+    if arguments.input is not None:
+        request = StateDecisionRequest.from_record(_read_request(arguments.input))
+        response = engine.decide_state(
+            state=request.state,
+            questions=request.questions,
+            identifier=request.identifier,
+        )
+        if arguments.json:
+            print(json.dumps(response.to_record(), ensure_ascii=False))
+        else:
+            print(_format_state_decision(response))
+        return 0
+
+    if arguments.question is None or not arguments.choice:
+        raise ValueError(
+            "provide --input with a typed-question request, or both "
+            "--question and --choice"
+        )
+
     decision = engine.decide(
         state=arguments.state,
         question=arguments.question,
@@ -344,6 +369,26 @@ def _run_decision(arguments: argparse.Namespace) -> int:
     else:
         print(_format_decision(decision))
     return 0
+
+
+def _read_request(source: str) -> dict:
+    if source == "-":
+        return json.load(sys.stdin)
+    return json.loads(Path(source).read_text(encoding="utf-8"))
+
+
+def _format_state_decision(response: StateDecision) -> str:
+    if not response.answers:
+        return "No answers."
+    name_width = max(len(name) for name in response.answers)
+    rows = []
+    for name, answer in response.answers.items():
+        if answer.deferred:
+            value = f"DEFER ({answer.probability:.6f})"
+        else:
+            value = f"{answer.answer} ({answer.probability:.6f})"
+        rows.append(f"{name:<{name_width}}  {answer.question_type:<7}  {value}")
+    return "\n".join(rows)
 
 
 def _format_decision(decision: Decision) -> str:

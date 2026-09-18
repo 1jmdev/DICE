@@ -29,7 +29,16 @@ from dice.preparation import (
     convert_dataset,
     prepare_datasets,
 )
-from dice.schema import Decision, DecisionExample, compose_query
+from dice.schema import (
+    Criterion,
+    Decision,
+    DecisionExample,
+    QuestionAnswer,
+    QuestionDefinition,
+    StateDecision,
+    StateDecisionRequest,
+    compose_query,
+)
 from dice.scorer import ScorerHead
 from dice.training import TrainingReport, predict_logits, train_scorer
 
@@ -40,6 +49,7 @@ __all__ = [
     "__version__",
     "CalibrationConfiguration",
     "CalibrationParameters",
+    "Criterion",
     "DATASET_REGISTRY",
     "DEFAULT_DATASETS",
     "Decision",
@@ -51,8 +61,12 @@ __all__ = [
     "EncoderConfiguration",
     "EvaluationReport",
     "FrozenEncoder",
+    "QuestionAnswer",
+    "QuestionDefinition",
     "ScorerConfiguration",
     "ScorerHead",
+    "StateDecision",
+    "StateDecisionRequest",
     "ThresholdSearchResult",
     "TrainingConfiguration",
     "TrainingReport",

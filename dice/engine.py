@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -21,7 +23,13 @@ from dice.constants import (
 )
 from dice.dataset import EmbeddingBundle
 from dice.encoder import FrozenEncoder
-from dice.schema import Decision, compose_query
+from dice.schema import (
+    Decision,
+    QuestionAnswer,
+    QuestionDefinition,
+    StateDecision,
+    compose_query,
+)
 from dice.scorer import ScorerHead
 from dice.training import predict_logits
 
@@ -108,22 +116,7 @@ class DecisionEngine:
         )
         choice_embeddings = self._encoder.encode_choices(choices)
         logits = self._score_embeddings(query_embedding, choice_embeddings)
-
-        probabilities = calibrated_probabilities(
-            logits.unsqueeze(0),
-            self.calibration.temperature,
-        ).squeeze(0)
-
-        confidence = float(probabilities.max().item())
-        choice_index = int(probabilities.argmax().item())
-
-        deferred = confidence < self.calibration.threshold
-        if (
-            not deferred
-            and self.calibration.logit_floor is not None
-            and float(logits.max().item()) < self.calibration.logit_floor
-        ):
-            deferred = True
+        deferred, choice_index, confidence, probabilities = self._gate(logits)
 
         return Decision(
             identifier=identifier,
@@ -135,6 +128,97 @@ class DecisionEngine:
             probabilities=[float(value) for value in probabilities.tolist()],
             logits=[float(value) for value in logits.tolist()],
         )
+
+    @torch.no_grad()
+    def decide_state(
+        self,
+        state: str,
+        questions: Mapping[str, QuestionDefinition | Mapping[str, Any]]
+        | Sequence[QuestionDefinition],
+        identifier: str | None = None,
+    ) -> StateDecision:
+        """Answer every typed question about one state in a batched pass.
+
+        All question instructions and all criteria are encoded in two batched
+        encoder calls, then scored independently per question.
+        """
+        definitions = self._normalize_questions(questions)
+        if not definitions:
+            raise ValueError("at least one question is required")
+
+        query_embeddings = self._encoder.encode_queries(
+            [
+                compose_query(state, definition.instructions)
+                for definition in definitions
+            ]
+        )
+        criterion_texts = [
+            criterion.text
+            for definition in definitions
+            for criterion in definition.criteria
+        ]
+        criterion_embeddings = self._encoder.encode_choices(criterion_texts)
+
+        answers: dict[str, QuestionAnswer] = {}
+        cursor = 0
+        for index, definition in enumerate(definitions):
+            count = len(definition.criteria)
+            window = criterion_embeddings[cursor : cursor + count]
+            cursor += count
+
+            logits = self._score_embeddings(
+                query_embeddings[index : index + 1],
+                window,
+            )
+            deferred, choice_index, confidence, probabilities = self._gate(logits)
+            answers[definition.name] = QuestionAnswer(
+                name=definition.name,
+                question_type=definition.question_type,
+                deferred=deferred,
+                label=None if deferred else definition.criteria[choice_index].label,
+                index=None if deferred else choice_index,
+                probability=confidence,
+                criteria=definition.labels,
+                probabilities=[float(value) for value in probabilities.tolist()],
+                logits=[float(value) for value in logits.tolist()],
+            )
+
+        return StateDecision(identifier=identifier, state=state, answers=answers)
+
+    def _gate(self, logits: torch.Tensor) -> tuple[bool, int, float, torch.Tensor]:
+        """Turn logits into a gated, calibrated answer."""
+        probabilities = calibrated_probabilities(
+            logits.unsqueeze(0),
+            self.calibration.temperature,
+        ).squeeze(0)
+        confidence = float(probabilities.max().item())
+        index = int(probabilities.argmax().item())
+
+        deferred = confidence < self.calibration.threshold
+        if (
+            not deferred
+            and self.calibration.logit_floor is not None
+            and float(logits.max().item()) < self.calibration.logit_floor
+        ):
+            deferred = True
+        return deferred, index, confidence, probabilities
+
+    @staticmethod
+    def _normalize_questions(
+        questions: Mapping[str, QuestionDefinition | Mapping[str, Any]]
+        | Sequence[QuestionDefinition],
+    ) -> list[QuestionDefinition]:
+        if isinstance(questions, Mapping):
+            definitions: list[QuestionDefinition] = []
+            for name, specification in questions.items():
+                if isinstance(specification, QuestionDefinition):
+                    definitions.append(specification)
+                else:
+                    definitions.append(
+                        QuestionDefinition.from_record(str(name), specification)
+                    )
+            return definitions
+        return list(questions)
 
     def _score_embeddings(
         self,
