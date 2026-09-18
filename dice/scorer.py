@@ -40,6 +40,10 @@ class ScorerHead(nn.Module):
             choice_embeddings: Tensor whose final dimension is the embedding
                 width.
         """
+        query_embeddings, choice_embeddings = torch.broadcast_tensors(
+            query_embeddings,
+            choice_embeddings,
+        )
         features = torch.cat(
             (
                 query_embeddings,

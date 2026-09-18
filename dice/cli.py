@@ -124,7 +124,7 @@ def _add_training_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Frozen encoder name or local path.",
     )
     parser.add_argument("--max-tokens", type=int, default=512)
-    parser.add_argument("--encoder-batch-size", type=int, default=32)
+    parser.add_argument("--encoder-batch-size", type=int, default=128)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--cache", default=None, help="Embedding cache file.")
     parser.add_argument(
@@ -239,7 +239,8 @@ def _run_training(arguments: argparse.Namespace) -> int:
         batch_size=arguments.encoder_batch_size,
         device=arguments.device,
     )
-    examples = read_examples(_resolve_dataset_path(arguments))
+    dataset_path = _resolve_dataset_path(arguments)
+    examples = read_examples(dataset_path)
     unlabelled = [example.identifier for example in examples if not example.is_labelled]
     if unlabelled:
         raise ValueError(
@@ -248,10 +249,15 @@ def _run_training(arguments: argparse.Namespace) -> int:
         )
 
     encoder = FrozenEncoder(encoder_configuration)
+    cache_path = (
+        Path(arguments.cache)
+        if arguments.cache is not None
+        else dataset_path.with_suffix(".embeddings.pt")
+    )
     bundle = prepare_bundle(
         examples,
         encoder,
-        cache_path=arguments.cache,
+        cache_path=cache_path,
         rebuild=arguments.rebuild_cache,
     )
 

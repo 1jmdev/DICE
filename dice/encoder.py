@@ -67,6 +67,15 @@ class FrozenEncoder:
             )
 
         size = batch_size or self.configuration.batch_size
+        dimension = self.embedding_dimension
+        embeddings = torch.empty(
+            (len(texts), dimension),
+            dtype=torch.float32,
+            device=self._device,
+        )
+
+        # Bucket by length so each window pads to a similar length.
+        order = sorted(range(len(texts)), key=lambda index: len(texts[index]))
         window_count = (len(texts) + size - 1) // size
         windows = progress(
             range(0, len(texts), size),
@@ -75,11 +84,11 @@ class FrozenEncoder:
             leave=False,
         )
 
-        fragments: list[torch.Tensor] = []
         for start in windows:
-            window = texts[start : start + size]
-            fragments.append(self._encode_window(window, prefix))
-        return torch.cat(fragments, dim=0)
+            indices = order[start : start + size]
+            window = [texts[index] for index in indices]
+            embeddings[indices] = self._encode_window(window, prefix)
+        return embeddings
 
     def encode_queries(
         self,

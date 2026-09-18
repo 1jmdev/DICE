@@ -25,7 +25,7 @@ class EncoderConfiguration:
     query_prefix: str = DEFAULT_QUERY_PREFIX
     passage_prefix: str = DEFAULT_PASSAGE_PREFIX
     max_tokens: int = DEFAULT_MAX_TOKENS
-    batch_size: int = 32
+    batch_size: int = 128
     device: str = "cpu"
 
     def fingerprint(self) -> str:

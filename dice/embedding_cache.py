@@ -52,7 +52,15 @@ def build_bundle(
         [example.query_text for example in examples]
     )
     flat_choices = [choice for example in examples for choice in example.choices]
-    flat_embeddings = encoder.encode_choices(flat_choices)
+    unique_choices = list(dict.fromkeys(flat_choices))
+    unique_embeddings = encoder.encode_choices(unique_choices)
+    position = {text: index for index, text in enumerate(unique_choices)}
+    flat_indices = torch.tensor(
+        [position[text] for text in flat_choices],
+        dtype=torch.long,
+        device=unique_embeddings.device,
+    )
+    flat_embeddings = unique_embeddings[flat_indices]
 
     choice_count = max(len(example.choices) for example in examples)
     dimension = int(query_embeddings.shape[1])
