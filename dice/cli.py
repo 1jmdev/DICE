@@ -125,7 +125,7 @@ def _add_training_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument("--max-tokens", type=int, default=512)
     parser.add_argument("--encoder-batch-size", type=int, default=128)
-    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--device", default="cuda")
     parser.add_argument("--cache", default=None, help="Embedding cache file.")
     parser.add_argument(
         "--rebuild-cache",

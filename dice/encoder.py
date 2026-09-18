@@ -22,23 +22,13 @@ class FrozenEncoder:
 
     def __init__(self, configuration: EncoderConfiguration | None = None) -> None:
         self.configuration = configuration or EncoderConfiguration()
-        self._device = self._resolve_device(self.configuration.device)
+        self._device = torch.device("cuda")
         self._tokenizer = AutoTokenizer.from_pretrained(self.configuration.model_name)
         self._model = AutoModel.from_pretrained(self.configuration.model_name)
         self._model.to(self._device)
         self._model.eval()
         for parameter in self._model.parameters():
             parameter.requires_grad_(False)
-
-    @staticmethod
-    def _resolve_device(device: str) -> torch.device:
-        if device == "auto":
-            if torch.cuda.is_available():
-                return torch.device("cuda")
-            if torch.backends.mps.is_available():
-                return torch.device("mps")
-            return torch.device("cpu")
-        return torch.device(device)
 
     @property
     def device(self) -> torch.device:

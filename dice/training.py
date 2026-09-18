@@ -194,7 +194,7 @@ def train_scorer(
     if not bool(training_bundle.labelled.any()):
         raise ValueError("the training bundle contains no labelled examples")
 
-    device = torch.device(configuration.device)
+    device = torch.device("cuda")
     scorer = ScorerHead(scorer_configuration).to(device)
     training_bundle = training_bundle.to(device)
     validation_bundle = validation_bundle.to(device)

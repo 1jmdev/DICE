@@ -26,7 +26,7 @@ class EncoderConfiguration:
     passage_prefix: str = DEFAULT_PASSAGE_PREFIX
     max_tokens: int = DEFAULT_MAX_TOKENS
     batch_size: int = 128
-    device: str = "cpu"
+    device: str = "cuda"
 
     def fingerprint(self) -> str:
         """Return a stable digest of the encoding-relevant settings."""
@@ -64,7 +64,7 @@ class TrainingConfiguration:
     epochs: int = 30
     validation_fraction: float = 0.15
     random_seed: int = 17
-    device: str = "cpu"
+    device: str = "cuda"
     early_stopping_patience: int | None = 5
     minimum_improvement: float = 1.0e-4
 
