@@ -21,8 +21,16 @@ DEFAULT_DATASET_FILENAME = "decisions.jsonl"
 DEFAULT_DATASETS: tuple[str, ...] = (
     "ag-news",
     "sst2",
+    "sst5",
     "emotion",
+    "tweet-emotion",
+    "tweet-sentiment",
     "20-newsgroups",
+    "bbc-news",
+    "trec",
+    "language-identification",
+    "banking77",
+    "dbpedia",
 )
 
 
@@ -79,6 +87,18 @@ DATASET_REGISTRY: dict[str, DatasetSpecification] = {
         choice_column="label_text",
         description="Stanford Sentiment Treebank sentences labelled negative or positive.",
     ),
+    "sst5": DatasetSpecification(
+        name="sst5",
+        path="SetFit/sst5",
+        questions=(
+            "How positive or negative is the sentence?",
+            "What is the fine-grained sentiment of the sentence?",
+            "Rate the sentiment expressed by the sentence.",
+        ),
+        text_columns=("text",),
+        choice_column="label_text",
+        description="Fine-grained five-level sentiment.",
+    ),
     "emotion": DatasetSpecification(
         name="emotion",
         path="dair-ai/emotion",
@@ -90,6 +110,30 @@ DATASET_REGISTRY: dict[str, DatasetSpecification] = {
         ),
         text_columns=("text",),
         description="English messages labelled with six basic emotions.",
+    ),
+    "tweet-emotion": DatasetSpecification(
+        name="tweet-emotion",
+        path="cardiffnlp/tweet_eval",
+        config="emotion",
+        questions=(
+            "Which emotion does the tweet express?",
+            "What emotion is the tweet conveying?",
+            "Identify the emotion in the tweet.",
+        ),
+        text_columns=("text",),
+        description="Tweets labelled with four emotions.",
+    ),
+    "tweet-sentiment": DatasetSpecification(
+        name="tweet-sentiment",
+        path="cardiffnlp/tweet_eval",
+        config="sentiment",
+        questions=(
+            "What is the sentiment of the tweet?",
+            "Is the tweet negative, neutral, or positive?",
+            "Classify the sentiment of the tweet.",
+        ),
+        text_columns=("text",),
+        description="Tweets labelled with three-way sentiment.",
     ),
     "20-newsgroups": DatasetSpecification(
         name="20-newsgroups",
@@ -103,16 +147,66 @@ DATASET_REGISTRY: dict[str, DatasetSpecification] = {
         choice_column="label_text",
         description="Usenet posts distributed across twenty topics.",
     ),
+    "bbc-news": DatasetSpecification(
+        name="bbc-news",
+        path="SetFit/bbc-news",
+        questions=(
+            "Which section of the news site is this article from?",
+            "What category is this news article in?",
+            "Classify the news article into one of these sections.",
+        ),
+        text_columns=("text",),
+        choice_column="label_text",
+        description="BBC News articles across five sections.",
+    ),
+    "trec": DatasetSpecification(
+        name="trec",
+        path="SetFit/TREC-QC",
+        questions=(
+            "What kind of question is being asked?",
+            "Classify the question into one of these categories.",
+            "Which category does this question belong to?",
+        ),
+        text_columns=("text",),
+        label_column="label_coarse",
+        choice_column="label_coarse_text",
+        description="TREC question classification across six coarse classes.",
+    ),
+    "language-identification": DatasetSpecification(
+        name="language-identification",
+        path="papluca/language-identification",
+        questions=(
+            "Which language is this text written in?",
+            "Identify the language of the passage.",
+            "What language is used in this text?",
+        ),
+        text_columns=("text",),
+        label_column="labels",
+        description="Language identification across twenty languages.",
+    ),
     "banking77": DatasetSpecification(
         name="banking77",
-        path="PolyAI/banking77",
+        path="mteb/banking77",
         questions=(
             "Which banking intent does the customer request express?",
             "What is the customer asking about?",
             "Identify the intent behind the customer's request.",
         ),
         text_columns=("text",),
+        choice_column="label_text",
         description="Fine-grained customer-service intent classification, 77 intents.",
+    ),
+    "dbpedia": DatasetSpecification(
+        name="dbpedia",
+        path="fancyzhx/dbpedia_14",
+        questions=(
+            "Which ontology class best describes the passage?",
+            "What kind of entity is described in the passage?",
+            "Classify the passage into one of these categories.",
+        ),
+        text_columns=("title", "content"),
+        default_limit=120000,
+        description="DBpedia ontology classification across fourteen classes.",
     ),
 }
 
@@ -142,9 +236,17 @@ def _ordered_choices(mapping: dict[int, str], dataset_name: str) -> list[str]:
     return [mapping[index] for index in expected]
 
 
-def _resolve_choices(dataset: Any, specification: DatasetSpecification) -> list[str]:
+def _integer_index(value: Any) -> int:
+    return int(value)
+
+
+def _resolve_labels(
+    dataset: Any,
+    specification: DatasetSpecification,
+) -> tuple[list[str], Callable[[Any], int]]:
+    """Return the ordered criteria and a mapping from raw label to index."""
     if specification.choices is not None:
-        return list(specification.choices)
+        return list(specification.choices), _integer_index
 
     if specification.choice_column is not None:
         mapping: dict[int, str] = {}
@@ -164,16 +266,26 @@ def _resolve_choices(dataset: Any, specification: DatasetSpecification) -> list[
                     f"{previous!r} and {choice!r}"
                 )
             mapping[label] = choice
-        return _ordered_choices(mapping, specification.name)
+        return _ordered_choices(mapping, specification.name), _integer_index
 
     feature = dataset.features[specification.label_column]
     names = getattr(feature, "names", None)
-    if names is None:
-        raise ValueError(
-            f"dataset {specification.name!r} exposes no label names; provide "
-            "explicit choices or a choice_column"
-        )
-    return [str(name) for name in names]
+    if names is not None:
+        return [str(name) for name in names], _integer_index
+
+    # The label column holds text values, so derive a stable index from them.
+    textual: set[str] = set()
+    records = progress(
+        dataset,
+        total=len(dataset),
+        description=f"Reading {specification.name} labels",
+        leave=False,
+    )
+    for record in records:
+        textual.add(str(record[specification.label_column]))
+    ordered = sorted(textual)
+    index = {text: position for position, text in enumerate(ordered)}
+    return ordered, index.__getitem__
 
 
 def convert_dataset(
@@ -190,10 +302,10 @@ def convert_dataset(
         cache_dir=None if cache_directory is None else str(cache_directory),
     )
 
-    choices = _resolve_choices(dataset, specification)
+    choices, label_index = _resolve_labels(dataset, specification)
 
     if limit is not None and limit < len(dataset):
-        dataset = dataset.select(range(limit))
+        dataset = dataset.shuffle(seed=17).select(range(limit))
 
     examples: list[DecisionExample] = []
     records = progress(
@@ -213,7 +325,7 @@ def convert_dataset(
                 state=state,
                 question=question,
                 choices=choices,
-                correct_index=int(record[specification.label_column]),
+                correct_index=label_index(record[specification.label_column]),
             )
         )
     return examples

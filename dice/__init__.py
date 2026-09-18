@@ -26,7 +26,7 @@ from dice.dataset import (
 )
 from dice.encoder import FrozenEncoder
 from dice.engine import DecisionEngine
-from dice.evaluation import EvaluationReport, evaluate_logits
+from dice.evaluation import EvaluationReport, accuracy_by_identifier, evaluate_logits
 from dice.preparation import (
     DATASET_REGISTRY,
     DEFAULT_DATASETS,
@@ -79,6 +79,7 @@ __all__ = [
     "TrainingReport",
     "Usage",
     "available_datasets",
+    "accuracy_by_identifier",
     "compose_query",
     "convert_dataset",
     "evaluate_logits",

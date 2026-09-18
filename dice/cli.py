@@ -21,7 +21,7 @@ from dice.dataset import partition_indices, read_examples, write_examples
 from dice.embedding_cache import build_bundle, prepare_bundle
 from dice.encoder import FrozenEncoder
 from dice.engine import DecisionEngine
-from dice.evaluation import evaluate_logits
+from dice.evaluation import accuracy_by_identifier, evaluate_logits
 from dice.preparation import (
     DEFAULT_DATASET_FILENAME,
     DEFAULT_DATASETS,
@@ -77,6 +77,11 @@ def _add_preparation_parser(subparsers: argparse._SubParsersAction) -> None:
         "--cache-dir",
         default=None,
         help="Hugging Face download cache directory.",
+    )
+    parser.add_argument(
+        "--refresh-data",
+        action="store_true",
+        help="Accepted for symmetry with 'train'; preparation always rebuilds.",
     )
     parser.add_argument(
         "--list",
@@ -377,6 +382,15 @@ def _run_evaluation(arguments: argparse.Namespace) -> int:
     logits = engine.predict_logits(bundle, arguments.batch_size)
     report = evaluate_logits(logits, bundle.labels, engine.calibration)
     print(report.format())
+
+    if bundle.identifiers:
+        breakdown = accuracy_by_identifier(logits, bundle.labels, bundle.identifiers)
+        if breakdown:
+            width = max(len(name) for name in breakdown)
+            print()
+            print("Accuracy by dataset")
+            for name, (accuracy, count) in sorted(breakdown.items()):
+                print(f"{name:<{width}}  {accuracy:.4f}  ({count})")
     return 0
 
 

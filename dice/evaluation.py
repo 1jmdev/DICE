@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 
 import torch
@@ -127,3 +128,30 @@ def evaluate_logits(
         mean_confidence=float(confidences.mean().item()),
         expected_calibration_error=expected_calibration_error(probabilities, labelled),
     )
+
+
+def accuracy_by_identifier(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    identifiers: Sequence[str],
+) -> dict[str, tuple[float, int]]:
+    """Break argmax accuracy down by the dataset prefix of each identifier."""
+    logits = logits.detach().cpu().float()
+    labels = labels.detach().cpu().long()
+    predictions = logits.argmax(dim=-1)
+
+    correct: dict[str, int] = {}
+    totals: dict[str, int] = {}
+    for position, identifier in enumerate(identifiers):
+        label = int(labels[position].item())
+        if label == MISSING_LABEL_INDEX:
+            continue
+        prefix = identifier.rsplit("-", 1)[0] if "-" in identifier else identifier
+        totals[prefix] = totals.get(prefix, 0) + 1
+        if int(predictions[position].item()) == label:
+            correct[prefix] = correct.get(prefix, 0) + 1
+
+    return {
+        prefix: (correct.get(prefix, 0) / count, count)
+        for prefix, count in totals.items()
+    }
