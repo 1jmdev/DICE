@@ -106,6 +106,23 @@ class FrozenEncoder:
             "Encoding choices",
         )
 
+    def count_tokens(
+        self,
+        texts: Sequence[str],
+        prefix: str = "",
+    ) -> int:
+        """Count encoder tokens for the given texts, including the prefix."""
+        total = 0
+        for text in texts:
+            encoded = self._tokenizer(
+                prefix + text,
+                add_special_tokens=True,
+                truncation=True,
+                max_length=self.configuration.max_tokens,
+            )
+            total += len(encoded["input_ids"])
+        return total
+
     def _encode_window(self, texts: Sequence[str], prefix: str) -> torch.Tensor:
         prefixed = [prefix + text for text in texts]
         tokenized = self._tokenizer(

@@ -211,6 +211,11 @@ def _add_server_parser(subparsers: argparse._SubParsersAction) -> None:
         default="models/dice",
         help="Saved model directory.",
     )
+    parser.add_argument(
+        "--model-name",
+        default=None,
+        help="Name reported in responses.",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.set_defaults(handler=_run_server)
@@ -221,7 +226,7 @@ def _run_server(arguments: argparse.Namespace) -> int:
 
     from dice import server as server_module
 
-    server_module.load(arguments.model)
+    server_module.load(arguments.model, arguments.model_name)
     uvicorn.run(server_module.app, host=arguments.host, port=arguments.port)
     return 0
 
@@ -356,6 +361,7 @@ def _run_training(arguments: argparse.Namespace) -> int:
         decision_configuration=DecisionConfiguration(
             candidate_retrieval_limit=arguments.candidate_retrieval_limit,
         ),
+        model_name=Path(arguments.output).name,
         encoder=encoder,
         scorer=scorer,
     )
@@ -421,10 +427,12 @@ def _format_state_decision(response: StateDecision) -> str:
     name_width = max(len(name) for name in response.answers)
     rows = []
     for name, answer in response.answers.items():
-        if answer.deferred:
-            value = f"DEFER ({answer.probability:.6f})"
+        if answer.question_type == "noul":
+            value = f"{answer.probabilities[0]:.6f}"
+        elif answer.question_type == "score":
+            value = f"{answer.expected_score:.6f} (confidence {answer.confidence:.6f})"
         else:
-            value = f"{answer.answer} ({answer.probability:.6f})"
+            value = f"{answer.label} (confidence {answer.confidence:.6f})"
         rows.append(f"{name:<{name_width}}  {answer.question_type:<7}  {value}")
     return "\n".join(rows)
 

@@ -19,6 +19,7 @@ from dice.configuration import (
 from dice.constants import (
     CALIBRATION_FILENAME,
     CONFIGURATION_FILENAME,
+    PROJECT_NAME,
     SCORER_FILENAME,
 )
 from dice.dataset import EmbeddingBundle
@@ -28,6 +29,7 @@ from dice.schema import (
     QuestionAnswer,
     QuestionDefinition,
     StateDecision,
+    Usage,
     compose_query,
 )
 from dice.scorer import ScorerHead
@@ -43,6 +45,7 @@ class DecisionEngine:
         scorer_configuration: ScorerConfiguration,
         calibration: CalibrationParameters,
         decision_configuration: DecisionConfiguration | None = None,
+        model_name: str = PROJECT_NAME,
         encoder: FrozenEncoder | None = None,
         scorer: ScorerHead | None = None,
     ) -> None:
@@ -50,6 +53,7 @@ class DecisionEngine:
         self.scorer_configuration = scorer_configuration
         self.calibration = calibration
         self.decision_configuration = decision_configuration or DecisionConfiguration()
+        self.model_name = model_name
 
         self._encoder = (
             encoder if encoder is not None else FrozenEncoder(encoder_configuration)
@@ -146,20 +150,21 @@ class DecisionEngine:
         if not definitions:
             raise ValueError("at least one question is required")
 
-        query_embeddings = self._encoder.encode_queries(
-            [
-                compose_query(state, definition.instructions)
-                for definition in definitions
-            ]
-        )
+        query_texts = [
+            compose_query(state, definition.instructions)
+            for definition in definitions
+        ]
         criterion_texts = [
             criterion.text
             for definition in definitions
             for criterion in definition.criteria
         ]
+
+        query_embeddings = self._encoder.encode_queries(query_texts)
         criterion_embeddings = self._encoder.encode_choices(criterion_texts)
 
         answers: dict[str, QuestionAnswer] = {}
+        selected_texts: list[str] = []
         cursor = 0
         for index, definition in enumerate(definitions):
             count = len(definition.criteria)
@@ -170,20 +175,39 @@ class DecisionEngine:
                 query_embeddings[index : index + 1],
                 window,
             )
-            deferred, choice_index, confidence, probabilities = self._gate(logits)
+            probabilities = calibrated_probabilities(
+                logits.unsqueeze(0),
+                self.calibration.temperature,
+            ).squeeze(0)
+            choice_index = int(probabilities.argmax().item())
             answers[definition.name] = QuestionAnswer(
                 name=definition.name,
                 question_type=definition.question_type,
-                deferred=deferred,
-                label=None if deferred else definition.criteria[choice_index].label,
-                index=None if deferred else choice_index,
-                probability=confidence,
-                criteria=definition.labels,
+                index=choice_index,
+                criteria=definition.criteria,
                 probabilities=[float(value) for value in probabilities.tolist()],
-                logits=[float(value) for value in logits.tolist()],
             )
+            selected_texts.append(definition.criteria[choice_index].text)
 
-        return StateDecision(identifier=identifier, state=state, answers=answers)
+        input_tokens = self._encoder.count_tokens(
+            query_texts,
+            self.encoder_configuration.query_prefix,
+        ) + self._encoder.count_tokens(
+            criterion_texts,
+            self.encoder_configuration.passage_prefix,
+        )
+        output_tokens = self._encoder.count_tokens(selected_texts)
+
+        return StateDecision(
+            model=self.model_name,
+            state=state,
+            identifier=identifier,
+            answers=answers,
+            usage=Usage(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            ),
+        )
 
     def _gate(self, logits: torch.Tensor) -> tuple[bool, int, float, torch.Tensor]:
         """Turn logits into a gated, calibrated answer."""
@@ -260,6 +284,7 @@ class DecisionEngine:
         target.mkdir(parents=True, exist_ok=True)
 
         configuration = {
+            "model": self.model_name,
             "encoder": asdict(self.encoder_configuration),
             "scorer": asdict(self.scorer_configuration),
             "decision": asdict(self.decision_configuration),
@@ -292,6 +317,7 @@ class DecisionEngine:
             **configuration.get("decision", {})
         )
         calibration = CalibrationParameters.load(source / CALIBRATION_FILENAME)
+        model_name = str(configuration.get("model", PROJECT_NAME))
 
         scorer = ScorerHead.load(source / SCORER_FILENAME, device="cpu")
         return cls(
@@ -299,5 +325,6 @@ class DecisionEngine:
             scorer_configuration=scorer_configuration,
             calibration=calibration,
             decision_configuration=decision_configuration,
+            model_name=model_name,
             scorer=scorer,
         )

@@ -43,6 +43,7 @@ from dice.schema import (
     QuestionDefinition,
     StateDecision,
     StateDecisionRequest,
+    Usage,
     compose_query,
 )
 from dice.scorer import ScorerHead
@@ -76,6 +77,7 @@ __all__ = [
     "ThresholdSearchResult",
     "TrainingConfiguration",
     "TrainingReport",
+    "Usage",
     "available_datasets",
     "compose_query",
     "convert_dataset",

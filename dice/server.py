@@ -17,10 +17,12 @@ app = FastAPI(title="DICE")
 _engine: DecisionEngine | None = None
 
 
-def load(directory: str) -> None:
+def load(directory: str, model_name: str | None = None) -> None:
     """Load the engine from a saved model directory."""
     global _engine
     _engine = DecisionEngine.from_pretrained(directory)
+    if model_name is not None:
+        _engine.model_name = model_name
 
 
 def engine() -> DecisionEngine:

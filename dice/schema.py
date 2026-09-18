@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -295,38 +296,88 @@ class StateDecisionRequest:
 
 
 @dataclass
+class Usage:
+    """Token accounting for one decision request."""
+
+    input_tokens: int
+    output_tokens: int
+
+    def to_record(self) -> dict[str, int]:
+        """Render the usage as a JSON-serialisable mapping."""
+        return {
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+        }
+
+
+@dataclass
 class QuestionAnswer:
     """The calibrated answer to one typed question."""
 
     name: str
     question_type: str
-    deferred: bool
-    label: str | None
-    index: int | None
-    probability: float
-    criteria: list[str]
+    index: int
+    criteria: list[Criterion]
     probabilities: list[float]
-    logits: list[float]
 
     @property
-    def answer(self) -> str:
-        """The chosen criterion label, or the deferral sentinel."""
-        if self.deferred or self.label is None:
-            return DEFERRAL_SENTINEL
-        return self.label
+    def label(self) -> str:
+        """The chosen criterion label."""
+        return self.criteria[self.index].label
+
+    @property
+    def text(self) -> str:
+        """The chosen criterion text."""
+        return self.criteria[self.index].text
+
+    @property
+    def expected_score(self) -> float:
+        """The probability-weighted ordinal level."""
+        return sum(
+            level * probability
+            for level, probability in enumerate(self.probabilities)
+        )
+
+    @property
+    def confidence(self) -> float:
+        """Normalised-entropy confidence in ``[0, 1]``."""
+        count = len(self.probabilities)
+        if count <= 1:
+            return 1.0
+        entropy = 0.0
+        for probability in self.probabilities:
+            if probability > 0.0:
+                entropy -= probability * math.log(probability)
+        return max(0.0, 1.0 - entropy / math.log(count))
 
     def to_record(self) -> dict[str, Any]:
-        """Render the answer as a JSON-serialisable mapping."""
+        """Render the answer in the type-specific response shape."""
+        if self.question_type == "noul":
+            return {
+                "type": "noul",
+                "noul": round(self.probabilities[0], 6),
+            }
+        if self.question_type == "score":
+            return {
+                "type": "score",
+                "score": round(self.expected_score, 6),
+                "legend": {
+                    str(level): criterion.text
+                    for level, criterion in enumerate(self.criteria)
+                },
+                "confidence": round(self.confidence, 6),
+            }
         return {
-            "type": self.question_type,
-            "deferred": self.deferred,
-            "answer": self.answer,
-            "label": self.label,
-            "index": self.index,
-            "probability": self.probability,
-            "criteria": list(self.criteria),
-            "probabilities": list(self.probabilities),
-            "logits": list(self.logits),
+            "type": "choice",
+            "choice": self.label,
+            "probabilities": {
+                criterion.label: round(probability, 6)
+                for criterion, probability in zip(
+                    self.criteria,
+                    self.probabilities,
+                )
+            },
+            "confidence": round(self.confidence, 6),
         }
 
 
@@ -334,17 +385,19 @@ class QuestionAnswer:
 class StateDecision:
     """Every answer produced for one state."""
 
-    identifier: str | None
+    model: str
     state: str
+    identifier: str | None
     answers: dict[str, QuestionAnswer]
+    usage: Usage
 
     def to_record(self) -> dict[str, Any]:
-        """Render the decision as a JSON-serialisable mapping."""
+        """Render the decision in the API response shape."""
         return {
-            "identifier": self.identifier,
-            "state": self.state,
+            "model": self.model,
             "answers": {
                 name: answer.to_record()
                 for name, answer in self.answers.items()
             },
+            "usage": self.usage.to_record(),
         }
