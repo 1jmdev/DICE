@@ -105,7 +105,7 @@ def predict_logits(
     """Compute logits for an entire bundle, returned on the CPU."""
     scorer.eval()
     if len(bundle) == 0:
-        return torch.empty((0, bundle.choice_count), dtype=torch.float32)
+        return torch.empty((0, 0), dtype=torch.float32)
 
     batch_count = (len(bundle) + batch_size - 1) // batch_size
     rows: list[torch.Tensor] = []
@@ -117,11 +117,12 @@ def predict_logits(
     ):
         stop = min(start + batch_size, len(bundle))
         batch = bundle.subset(list(range(start, stop)))
+        choice_embeddings, choice_mask = batch.padded()
         logits = masked_logits(
             scorer,
             batch.query_embeddings,
-            batch.choice_embeddings,
-            batch.choice_mask,
+            choice_embeddings,
+            choice_mask,
         )
         rows.append(logits.detach().cpu())
     return torch.cat(rows, dim=0)
@@ -151,13 +152,17 @@ def evaluate_scorer(
             leave=False,
         )
         for batch in batches:
+            choice_embeddings, choice_mask = batch.padded()
             logits = masked_logits(
                 scorer,
                 batch.query_embeddings,
-                batch.choice_embeddings,
-                batch.choice_mask,
+                choice_embeddings,
+                choice_mask,
             )
-            loss = compute_loss(logits, batch.labels, batch.soft_targets)
+            soft_targets = batch.soft_targets
+            if soft_targets is not None:
+                soft_targets = soft_targets[:, : choice_embeddings.shape[1]]
+            loss = compute_loss(logits, batch.labels, soft_targets)
             total_loss += float(loss.item()) * len(batch)
             total_count += len(batch)
 
@@ -234,13 +239,17 @@ def train_scorer(
         )
         for batch in batches:
             optimizer.zero_grad()
+            choice_embeddings, choice_mask = batch.padded()
             logits = masked_logits(
                 scorer,
                 batch.query_embeddings,
-                batch.choice_embeddings,
-                batch.choice_mask,
+                choice_embeddings,
+                choice_mask,
             )
-            loss = compute_loss(logits, batch.labels, batch.soft_targets)
+            soft_targets = batch.soft_targets
+            if soft_targets is not None:
+                soft_targets = soft_targets[:, : choice_embeddings.shape[1]]
+            loss = compute_loss(logits, batch.labels, soft_targets)
             loss.backward()
             optimizer.step()
 

@@ -61,7 +61,6 @@ DATASET_REGISTRY: dict[str, DatasetSpecification] = {
         path="fancyzhx/ag_news",
         question="Which news category best describes the article?",
         text_columns=("text",),
-        default_limit=24000,
         description="AG News topic classification across four balanced categories.",
     ),
     "sst2": DatasetSpecification(
@@ -86,7 +85,6 @@ DATASET_REGISTRY: dict[str, DatasetSpecification] = {
         question="Which newsgroup topic does the post belong to?",
         text_columns=("text",),
         choice_column="label_text",
-        default_limit=8000,
         description="Usenet posts distributed across twenty topics.",
     ),
     "banking77": DatasetSpecification(

@@ -70,13 +70,51 @@ def split_indices(
     return training, validation
 
 
+def partition_indices(
+    count: int,
+    validation_fraction: float,
+    test_fraction: float,
+    seed: int,
+) -> tuple[list[int], list[int], list[int]]:
+    """Split example indices into disjoint training, validation, and test sets."""
+    if count < 3:
+        raise ValueError("at least three examples are required to form a split")
+    for name, value in (
+        ("validation_fraction", validation_fraction),
+        ("test_fraction", test_fraction),
+    ):
+        if not 0.0 <= value < 1.0:
+            raise ValueError(f"{name} must lie within [0, 1)")
+    if validation_fraction + test_fraction >= 1.0:
+        raise ValueError("validation_fraction and test_fraction must sum below 1")
+
+    order = list(range(count))
+    random.Random(seed).shuffle(order)
+
+    test_size = int(round(count * test_fraction))
+    validation_size = int(round(count * validation_fraction))
+    test_size = max(0, min(test_size, count - 2))
+    validation_size = max(0, min(validation_size, count - test_size - 1))
+
+    test = order[:test_size]
+    validation = order[test_size : test_size + validation_size]
+    training = order[test_size + validation_size:]
+    return training, validation, test
+
+
 @dataclass
 class EmbeddingBundle:
-    """Padded encoder embeddings aligned with labels and soft targets."""
+    """Encoder embeddings stored compactly.
+
+    Choices are kept as indices into a small table of unique choice embeddings,
+    so a mixture with many classes never pads every row to the widest choice
+    set. Padding is materialised per batch by :meth:`padded`.
+    """
 
     query_embeddings: torch.Tensor
-    choice_embeddings: torch.Tensor
-    choice_mask: torch.Tensor
+    choice_table: torch.Tensor
+    choice_indices: torch.Tensor
+    choice_offsets: torch.Tensor
     labels: torch.Tensor
     soft_targets: torch.Tensor | None = None
     identifiers: list[str] = field(default_factory=list)
@@ -85,9 +123,16 @@ class EmbeddingBundle:
         return int(self.query_embeddings.shape[0])
 
     @property
+    def choice_counts(self) -> torch.Tensor:
+        """The number of choices per example."""
+        return self.choice_offsets[1:] - self.choice_offsets[:-1]
+
+    @property
     def choice_count(self) -> int:
-        """The padded number of choices per example."""
-        return int(self.choice_embeddings.shape[1])
+        """The widest choice set in this bundle."""
+        if len(self) == 0:
+            return 0
+        return int(self.choice_counts.max().item())
 
     @property
     def labelled(self) -> torch.Tensor:
@@ -100,30 +145,87 @@ class EmbeddingBundle:
             selection = indices.detach().to(dtype=torch.long, device="cpu")
         else:
             selection = torch.as_tensor(list(indices), dtype=torch.long)
+
+        counts = self.choice_counts[selection]
+        offsets = torch.zeros(len(selection) + 1, dtype=torch.long)
+        offsets[1:] = counts.cumsum(0)
+        total = int(offsets[-1].item())
+        within = torch.arange(total, dtype=torch.long) - torch.repeat_interleave(
+            offsets[:-1],
+            counts,
+        )
+        row_ids = torch.repeat_interleave(selection, counts)
+        source = self.choice_offsets[row_ids] + within
+
         soft_targets = None
         if self.soft_targets is not None:
             soft_targets = self.soft_targets[selection]
+
         identifiers: list[str] = []
         if self.identifiers:
             identifiers = [self.identifiers[index] for index in selection.tolist()]
+
         return EmbeddingBundle(
             query_embeddings=self.query_embeddings[selection],
-            choice_embeddings=self.choice_embeddings[selection],
-            choice_mask=self.choice_mask[selection],
+            choice_table=self.choice_table,
+            choice_indices=self.choice_indices[source],
+            choice_offsets=offsets,
             labels=self.labels[selection],
             soft_targets=soft_targets,
             identifiers=identifiers,
         )
 
+    def padded(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Materialise dense choice embeddings and a validity mask for this bundle."""
+        row_count = len(self)
+        width = self.choice_count
+        dimension = int(self.choice_table.shape[1])
+        device = self.choice_table.device
+
+        if row_count == 0 or width == 0:
+            return (
+                torch.zeros(
+                    (row_count, width, dimension),
+                    dtype=self.choice_table.dtype,
+                    device=device,
+                ),
+                torch.zeros((row_count, width), dtype=torch.bool, device=device),
+            )
+
+        counts = self.choice_counts
+        total = int(counts.sum().item())
+        within = torch.arange(total, dtype=torch.long) - torch.repeat_interleave(
+            self.choice_offsets[:-1],
+            counts,
+        )
+        row_ids = torch.repeat_interleave(
+            torch.arange(row_count, dtype=torch.long),
+            counts,
+        )
+        flat = self.choice_table[self.choice_indices.to(device)]
+        row_ids = row_ids.to(device)
+        within = within.to(device)
+
+        choice_embeddings = torch.zeros(
+            (row_count, width, dimension),
+            dtype=flat.dtype,
+            device=device,
+        )
+        choice_mask = torch.zeros((row_count, width), dtype=torch.bool, device=device)
+        choice_embeddings[row_ids, within] = flat
+        choice_mask[row_ids, within] = True
+        return choice_embeddings, choice_mask
+
     def to(self, device: torch.device | str) -> EmbeddingBundle:
-        """Return a copy of the bundle on the given device."""
+        """Return a copy of the bundle with tensor payloads on the given device."""
         soft_targets = None
         if self.soft_targets is not None:
             soft_targets = self.soft_targets.to(device)
         return EmbeddingBundle(
             query_embeddings=self.query_embeddings.to(device),
-            choice_embeddings=self.choice_embeddings.to(device),
-            choice_mask=self.choice_mask.to(device),
+            choice_table=self.choice_table.to(device),
+            choice_indices=self.choice_indices,
+            choice_offsets=self.choice_offsets,
             labels=self.labels.to(device),
             soft_targets=soft_targets,
             identifiers=list(self.identifiers),

@@ -17,7 +17,13 @@ from dice.configuration import (
     TrainingConfiguration,
 )
 from dice.constants import PROJECT_NAME, PROJECT_VERSION
-from dice.dataset import EmbeddingBundle, read_examples, split_indices, write_examples
+from dice.dataset import (
+    EmbeddingBundle,
+    partition_indices,
+    read_examples,
+    split_indices,
+    write_examples,
+)
 from dice.encoder import FrozenEncoder
 from dice.engine import DecisionEngine
 from dice.evaluation import EvaluationReport, evaluate_logits
@@ -79,6 +85,7 @@ __all__ = [
     "predict_logits",
     "prepare_datasets",
     "read_examples",
+    "partition_indices",
     "split_indices",
     "train_scorer",
     "tune_threshold",

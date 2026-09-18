@@ -17,7 +17,7 @@ from dice.configuration import (
     TrainingConfiguration,
 )
 from dice.constants import DEFAULT_ENCODER_NAME
-from dice.dataset import read_examples, split_indices
+from dice.dataset import partition_indices, read_examples, write_examples
 from dice.embedding_cache import build_bundle, prepare_bundle
 from dice.encoder import FrozenEncoder
 from dice.engine import DecisionEngine
@@ -139,6 +139,7 @@ def _add_training_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--hidden-dimension", type=int, default=256)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--validation-fraction", type=float, default=0.15)
+    parser.add_argument("--test-fraction", type=float, default=0.1)
     parser.add_argument("--random-seed", type=int, default=17)
     parser.add_argument("--early-stopping-patience", type=int, default=5)
     parser.add_argument("--target-precision", type=float, default=0.95)
@@ -261,13 +262,18 @@ def _run_training(arguments: argparse.Namespace) -> int:
         rebuild=arguments.rebuild_cache,
     )
 
-    training_indices, validation_indices = split_indices(
+    training_indices, validation_indices, test_indices = partition_indices(
         len(bundle),
         arguments.validation_fraction,
+        arguments.test_fraction,
         arguments.random_seed,
     )
     training_bundle = bundle.subset(training_indices)
     validation_bundle = bundle.subset(validation_indices)
+
+    test_path = Path(arguments.output) / "test.jsonl"
+    write_examples([examples[index] for index in test_indices], test_path)
+    print(f"Held out {len(test_indices)} test examples at {test_path}")
 
     training_configuration = TrainingConfiguration(
         learning_rate=arguments.learning_rate,

@@ -14,7 +14,7 @@ pip install -e .
 ```bash
 dice prepare --output data/decisions.jsonl
 dice train --output models/dice
-dice evaluate --model models/dice --examples data/decisions.jsonl
+dice evaluate --model models/dice --examples models/dice/test.jsonl
 dice decide --model models/dice --input request.json
 ```
 
